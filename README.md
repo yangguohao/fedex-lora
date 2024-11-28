@@ -1,5 +1,3 @@
-![FedEx](assets/fedex-2.jpg)
-
 # FedEx-LoRA: Exact Aggregation for Federated and Efficient Fine-Tuning of Foundation Models
 
 Code for the paper [FedEx-LoRA: Exact Aggregation for Federated and Efficient Fine-Tuning of Foundation Models](https://arxiv.org/abs/2410.09432).
