@@ -14,8 +14,8 @@ Comparison of federated LoRA methods: (a) FedIT averages the individual client l
 ## Environment
 We recommend using a Conda environment to run the Python scripts for this project. Follow these commands to set up the environment and install the required libraries:
 ```
-conda create -n lora-sb python=3.10
-conda activate lora-sb
+conda create -n fedex-lora python=3.10
+conda activate fedex-lora
 pip install -r requirements.txt
 
 ```
