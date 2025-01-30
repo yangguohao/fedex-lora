@@ -37,19 +37,3 @@ CUDA_VISIBLE_DEVICES={device_indices} python3 fed_train_e2e_new.py --agg_type=ou
 - LoRA rank: Set `lora_r`
 
 Here is [the code](https://github.com/tuetschek/e2e-metrics) the code for evaluating E2E.
-
-## Citation
-
-If you use our work for your research, please cite our paper:
-
-```
-@misc{singhal2024exactaggregationfederatedefficient,
-      title={Exact Aggregation for Federated and Efficient Fine-Tuning of Foundation Models}, 
-      author={Raghav Singhal and Kaustubh Ponkshe and Praneeth Vepakomma},
-      year={2024},
-      eprint={2410.09432},
-      archivePrefix={arXiv},
-      primaryClass={cs.DC},
-      url={https://arxiv.org/abs/2410.09432}, 
-}
-```

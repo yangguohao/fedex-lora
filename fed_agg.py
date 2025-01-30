@@ -1,20 +1,5 @@
 import torch
-from torch.utils.data import DataLoader
-from transformers import (
-    RobertaTokenizer,
-    RobertaForSequenceClassification,
-    AdamW,
-    get_linear_schedule_with_warmup,
-)
-from datasets import load_dataset
-from tqdm import tqdm
-import numpy as np
-from peft import get_peft_model, LoraConfig, TaskType
 from data_utils import *
-from models import *
-from sklearn.metrics import matthews_corrcoef
-import numpy as np
-import torch.nn as nn
 
 
 def aggregate_models_normal(global_model, client_models):
@@ -31,7 +16,7 @@ def aggregate_models_normal(global_model, client_models):
                 [client_models[i][k].float() for i in range(len(client_models))], 0
             ).mean(0)
 
-    global_model.load_state_dict(global_dict)
+    global_model.load_state_dict(global_dict, strict=False)
 
     return global_model
 
@@ -50,7 +35,7 @@ def aggregate_models_ffa(global_model, client_models):
                 [client_models[i][k].float() for i in range(len(client_models))], 0
             ).mean(0)
 
-    global_model.load_state_dict(global_dict)
+    global_model.load_state_dict(global_dict, strict=False)
 
     return global_model
 
@@ -66,15 +51,16 @@ def aggregate_models_ours(global_model, client_models, args):
 
         if "classifier" in k:
             global_dict[k] = torch.stack(
-                [client_models[i][k].float() for i in range(len(client_models))], 0
+                [client_models[i].state_dict()[k].float() for i in range(len(client_models))], 0
             ).mean(0)
 
     for client_model in client_models:
-
+        state_dict = client_model.state_dict()
         for k in global_dict.keys():
 
             if "classifier" in k:
-                client_model[k] = global_dict[k]
+                state_dict[k] = global_dict[k]
+        client_model.load_state_dict(state_dict)
 
     for name, module in global_model.named_modules():
 
@@ -85,10 +71,10 @@ def aggregate_models_ours(global_model, client_models, args):
             base_layer_keys = name + ".base_layer.weight"
 
             lora_A_weights = torch.stack(
-                [client_model[lora_A_keys].detach() for client_model in client_models]
+                [client_model.state_dict()[lora_A_keys].detach() for client_model in client_models]
             )
             lora_B_weights = torch.stack(
-                [client_model[lora_B_keys].detach() for client_model in client_models]
+                [client_model.state_dict()[lora_B_keys].detach() for client_model in client_models]
             )
 
             # M shape: (d, k)
@@ -107,12 +93,40 @@ def aggregate_models_ours(global_model, client_models, args):
 
             residue = M - lora_B_avg @ lora_A_avg
 
-            global_dict[name + ".lora_A.default.weight"] = lora_A_avg
-            global_dict[name + ".lora_B.default.weight"] = lora_B_avg
-            global_dict[name + ".base_layer.weight"] += torch.transpose(
+            global_dict[lora_A_keys] = lora_A_avg
+            global_dict[lora_B_keys] = lora_B_avg
+            global_dict[base_layer_keys] += torch.transpose(
                 residue * scaling_factor, 1, 0
             )
 
+    global_model.load_state_dict(global_dict)
+
+    return global_model
+
+
+def aggregate_models_flora(global_model, client_models):
+    """
+    Concat the LoRA_A at dim 0 and LoRA_B at dim 1,
+    then calculate delta_W = concat_B @ concat_A and update it to the base layer weight
+    :param global_model:
+    :param client_models:
+    :return:
+    """
+    global_dict = global_model.state_dict()
+    lora_dict = {}
+    for k in global_dict.keys():
+        name = '.'.join(k.split('.')[:-3]) + '.base_layer.weight'
+        if "lora_A" in k:  # Only aggregate LoRA parameters
+            lora_dict[name] = torch.concat(
+                [client_models[i].state_dict()[k].float() for i in range(len(client_models))], 0
+            )
+        if "lora_B" in k:
+            B_concat = torch.concat(
+                [client_models[i].state_dict()[k].float() for i in range(len(client_models))], 1
+            )
+            lora_dict[name] = B_concat @ lora_dict[name]
+    for name, delta_w in lora_dict.items():
+        global_dict[name] += delta_w
     global_model.load_state_dict(global_dict)
 
     return global_model

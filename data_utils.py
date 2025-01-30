@@ -1,28 +1,20 @@
-import torch
-from torch.utils.data import DataLoader
-from transformers import RobertaTokenizer, RobertaForSequenceClassification, AdamW
-from datasets import load_dataset
-from torch.utils.data import Dataset, DataLoader, Subset
-from transformers import (
-    GPT2Tokenizer,
-    GPT2LMHeadModel,
-    AdamW,
-    get_linear_schedule_with_warmup,
-)
-from tqdm import tqdm
 import numpy as np
-import pandas as pd
-from peft import get_peft_model, LoraConfig, TaskType
+from datasets import load_dataset
+from torch.utils.data import DataLoader
+from transformers import (
+    RobertaTokenizer,
+    AutoTokenizer
+)
 
 
-def load_and_preprocess_data(task):
+def load_and_preprocess_data(task, args):
 
     if "mnli" in task:
         dataset = load_dataset("glue", "mnli")
     else:
         dataset = load_dataset("glue", task)
 
-    tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+    tokenizer = RobertaTokenizer.from_pretrained(args.model)
 
     def tokenize_function(examples):
 
@@ -69,7 +61,7 @@ def load_and_preprocess_data(task):
                 examples["sentence"],
                 truncation=True,
                 padding="max_length",
-                max_length=128,
+                max_length=args.max_seq_length,
             )
         else:
             raise ValueError(f"Unexpected format for task {task}")
@@ -213,4 +205,57 @@ def create_e2e_data():
         tokenized_datasets["validation"],
         tokenized_datasets["test"],
         tokenizer,
+    )
+
+
+data_prompt = """Below is an instruction that describes a task, paired with a context for that instruction. Write a response that appropriately completes the instruction.
+
+### Instruction: 
+{}
+
+### Context: 
+{}
+
+### Response: 
+{}"""
+
+
+def create_dolly_data(args, tokenizer=None):
+    if tokenizer is None:
+        tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B")
+
+
+    def train_formatting_prompt(examples):
+        instructions = examples["instruction"]
+        contexts = examples["context"]
+        outputs = examples["response"]
+        texts = []
+        for inst, context, output in zip(instructions, contexts, outputs):
+            text = data_prompt.format(inst, context, output)
+            texts.append(text)
+        return {"text": texts, }
+
+    def test_formatting_prompt(examples):
+        instructions = examples["instruction"]
+        contexts = examples["context"]
+        outputs = examples["response"]
+        texts = []
+        for inst, context, output in zip(instructions, contexts, outputs):
+            text = data_prompt.format(inst, context, "")
+            texts.append(text)
+        return {"text": texts, }
+
+    dataset = load_dataset("databricks/databricks-dolly-15k")["train"].train_test_split(test_size=0.1,
+                                                                                        shuffle=True,
+                                                                                        seed=42)
+    # Load the Llama tokenizer
+    # tokenizer.padding_side = 'left'
+    # tokenizer.pad_token = tokenizer.eos_token
+    dataset['train'] = dataset['train'].map(train_formatting_prompt, batched=True)
+    dataset['test'] = dataset['test'].map(test_formatting_prompt, batched=True)
+
+    return (
+        dataset["train"],
+        dataset["test"],
+        tokenizer
     )
